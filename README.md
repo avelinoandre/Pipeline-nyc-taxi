@@ -35,8 +35,7 @@ Generate a Kaggle API token from **Kaggle → Account → API → Create New Tok
 a `.env` file in the project root with:
 
 ```env
-KAGGLE_USERNAME=your_kaggle_username
-KAGGLE_KEY=your_kaggle_api_key
+KAGGLE_API_TOKEN = your_key
 ```
 
 > `.env` is git-ignored — never commit your credentials.
