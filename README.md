@@ -43,10 +43,10 @@ KAGGLE_API_TOKEN = your_key
 ### 4. Download the dataset
 
 ```bash
-python3 scripts/download_dataset.py
+python3 ingestion/download_dataset.py
 ```
 
-This downloads the raw CSV files into `data/raw/`:
+This downloads the raw CSV files into `data/bronze/`:
 
 - `taxi_trip_data.csv` — main dataset with taxi trip records
 - `taxi_zone_geo.csv` — geographical/reference dataset (zone_id, zone_name, borough, geometry)
@@ -69,8 +69,8 @@ random sample (100,000 records, seed 42) converted to Pandas for analysis.
 ```
 .
 ├── data/
-│   └── raw/                         # downloaded CSV files (git-ignored)
-├── scripts/
+│   └── bronze/                         # downloaded CSV files (git-ignored)
+├── ingestion/
 │   └── download_dataset.py          # downloads the dataset from Kaggle
 ├── 01_exploratory_analysis.ipynb    # EDA notebook
 ├── requirements.txt
