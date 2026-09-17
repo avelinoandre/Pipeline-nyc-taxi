@@ -1,4 +1,4 @@
 .env
 .venv/
-data/raw/*
-!data/raw/.gitkeep
+data/bronze/*
+!data/bronze/.gitkeep

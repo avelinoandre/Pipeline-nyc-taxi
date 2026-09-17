@@ -12,7 +12,7 @@ if not token:
 try:
     path = kagglehub.dataset_download(
         "neilclack/nyc-taxi-trip-data-google-public-data",
-        output_dir="data/raw",
+        output_dir="data/bronze",
         force_download=True
         )
     
