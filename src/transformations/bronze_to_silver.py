@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, to_timestamp
+from pyspark.sql.functions import col, to_timestamp, unix_timestamp, datediff, to_date
 
 BRONZE_PATH = "data/bronze/taxi_trip_data.csv"
 SILVER_PATH = "data/silver/taxi_trips"
@@ -48,6 +48,51 @@ def drop_duplicates(df):
 
     return df
 
+def filter_invalid_trip_distance(df):
+
+    before = df.count()
+
+    df = df.filter(col("trip_distance") > 0)
+
+    after = df.count()
+    difference = before - after
+
+    print(f"ROWS BEFORE FILTER: {before}")
+    print(f"ROWS AFTER FILTER: {after}")
+    print(f"ROWS REMOVED WITH TRIP_DISTANCE > 0: {difference}")    
+
+    return df
+
+def create_trip_duration_minutes(df):
+
+    df  = df.withColumn(
+
+        "trip_duration_minutes",
+        unix_timestamp(col("dropoff_datetime")) - unix_timestamp(col("pickup_datetime"))
+        /60 #coloca-se o /60 no final pq unix_timestamp retorna em segundos, e o /60 divide por 60 transformando assim em minutos
+
+    )
+
+    return  df
+
+def filter_invalid_trip_duration(df):
+
+    df = df.filter(col("trip_duration_minutes") > 0)
+
+    return df
+
+def filter_invalid_24h_duration(df):
+
+    condition1 = datediff(to_date(col("dropoff_datetime")), to_date(col("pickup_datetime"))) == 1
+
+    condition2 = col("trip_duration_minutes").between(1400,1450)
+
+    df = df.filter(
+        ~(condition1 & condition2) # ~ pois estou negando essas condições!
+    )
+
+    return df
+
 def main():
     spark = create_spark_session()
 
@@ -58,7 +103,11 @@ def main():
 
     silver = transform_trips(trips)
     silver = drop_duplicates(silver)
-    
+    silver = filter_invalid_trip_distance(silver)
+    silver = create_trip_duration_minutes(silver)
+    silver = filter_invalid_trip_duration(silver)
+    silver = filter_invalid_24h_duration(silver)
+
     print("SILVER SCHEMA:")
     silver.printSchema()
     silver.show(5) # = df.head()
