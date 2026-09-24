@@ -7,32 +7,40 @@ SILVER_PATH = "data/silver/taxi_trips"
 
 def create_spark_session():
     spark =  (
+
         SparkSession.builder
         .appName("NYC Taxi Bronze to Silver")
         .master("local[*]")
         .getOrCreate()
+
     )
 
     return spark
 
 def read_bronze(spark):
     df =(
+
         spark.read
         .option("header", True) #first line of the csv is a header
         .option("inferSchema", True) #make Spark find the type of th variable
         .csv(BRONZE_PATH)
+
     )
 
     return df
 
 def transform_trips(df):
     df = df.withColumn( 
+
         "pickup_datetime",
         to_timestamp(col("pickup_datetime"))
+
     )
     df = df.withColumn( 
+
         "dropoff_datetime",
         to_timestamp(col("dropoff_datetime"))
+
     )
 
     return df
@@ -96,6 +104,7 @@ def filter_invalid_24h_duration(df):
 
 def validate_silver(df):
     metrics = df.agg(
+
         count("*").alias("total_rows"),
 
         spark_sum(
@@ -105,6 +114,7 @@ def validate_silver(df):
         spark_sum(
             when(col("trip_duration_minutes") <= 0, 1).otherwise(0)
         ).alias("invalid_trip_duration")
+        
     ).first()
 
     if metrics.total_rows == 0:
@@ -117,6 +127,14 @@ def validate_silver(df):
         raise ValueError("Silver contains invalid trip_duration")
 
     print("Silver validation passed")
+
+def write_silver(df):
+    (df.write
+     
+        .mode("overwrite")
+        .parquet(SILVER_PATH)
+
+    )
 
 def main():
     spark = create_spark_session()
@@ -134,8 +152,14 @@ def main():
     silver = filter_invalid_24h_duration(silver)
 
     validate_silver(silver)
+    write_silver(silver)
 
     print("SILVER SCHEMA:")
+    silver.printSchema()
+    silver.show(5) # = df.head()
+
+    silver_test = spark.read.parquet(SILVER_PATH)
+    print("PARQUET SCHEMA:")
     silver.printSchema()
     silver.show(5) # = df.head()
 
