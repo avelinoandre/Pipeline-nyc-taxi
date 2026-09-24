@@ -1,5 +1,6 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, to_timestamp, unix_timestamp, datediff, to_date
+from pyspark.sql.functions import col, to_timestamp, unix_timestamp, datediff, to_date, count, sum as spark_sum, when
+
 
 BRONZE_PATH = "data/bronze/taxi_trip_data.csv"
 SILVER_PATH = "data/silver/taxi_trips"
@@ -93,6 +94,30 @@ def filter_invalid_24h_duration(df):
 
     return df
 
+def validate_silver(df):
+    metrics = df.agg(
+        count("*").alias("total_rows"),
+
+        spark_sum(
+            when(col("trip_distance") <= 0, 1).otherwise(0)
+        ).alias("invalid_trip_distance"),
+
+        spark_sum(
+            when(col("trip_duration_minutes") <= 0, 1).otherwise(0)
+        ).alias("invalid_trip_duration")
+    ).first()
+
+    if metrics.total_rows == 0:
+        raise ValueError("Silver dataset is empty")
+
+    if metrics.invalid_trip_distance > 0:
+        raise ValueError("Silver contains invalid trip_distance")
+
+    if metrics.invalid_trip_duration > 0:
+        raise ValueError("Silver contains invalid trip_duration")
+
+    print("Silver validation passed")
+
 def main():
     spark = create_spark_session()
 
@@ -107,6 +132,8 @@ def main():
     silver = create_trip_duration_minutes(silver)
     silver = filter_invalid_trip_duration(silver)
     silver = filter_invalid_24h_duration(silver)
+
+    validate_silver(silver)
 
     print("SILVER SCHEMA:")
     silver.printSchema()
