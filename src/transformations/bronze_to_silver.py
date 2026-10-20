@@ -68,7 +68,7 @@ def filter_invalid_trip_distance(df):
 
     print(f"ROWS BEFORE FILTER: {before}")
     print(f"ROWS AFTER FILTER: {after}")
-    print(f"ROWS REMOVED WITH TRIP_DISTANCE > 0: {difference}")    
+    print(f"ROWS REMOVED WITH INVALID TRIP_DISTANCE: {difference}")
 
     return df
 
@@ -77,8 +77,10 @@ def create_trip_duration_minutes(df):
     df  = df.withColumn(
 
         "trip_duration_minutes",
-        unix_timestamp(col("dropoff_datetime")) - unix_timestamp(col("pickup_datetime"))
-        /60 #coloca-se o /60 no final pq unix_timestamp retorna em segundos, e o /60 divide por 60 transformando assim em minutos
+        (
+            unix_timestamp(col("dropoff_datetime"))
+            - unix_timestamp(col("pickup_datetime"))
+        ) / 60  # A diferenca inteira esta em segundos; converter para minutos.
 
     )
 
@@ -103,17 +105,26 @@ def filter_invalid_24h_duration(df):
     return df
 
 def validate_silver(df):
+    expected_duration = (
+        unix_timestamp(col("dropoff_datetime"))
+        - unix_timestamp(col("pickup_datetime"))
+    ) / 60
+
     metrics = df.agg(
 
         count("*").alias("total_rows"),
 
         spark_sum(
-            when(col("trip_distance") <= 0, 1).otherwise(0)
+            when(col("trip_distance").isNull() | (col("trip_distance") <= 0), 1).otherwise(0)
         ).alias("invalid_trip_distance"),
 
         spark_sum(
-            when(col("trip_duration_minutes") <= 0, 1).otherwise(0)
-        ).alias("invalid_trip_duration")
+            when(col("trip_duration_minutes").isNull() | (col("trip_duration_minutes") <= 0), 1).otherwise(0)
+        ).alias("invalid_trip_duration"),
+
+        spark_sum(
+            when(~col("trip_duration_minutes").eqNullSafe(expected_duration), 1).otherwise(0)
+        ).alias("inconsistent_trip_duration")
         
     ).first()
 
@@ -126,7 +137,10 @@ def validate_silver(df):
     if metrics.invalid_trip_duration > 0:
         raise ValueError("Silver contains invalid trip_duration")
 
-    print("Silver validation passed")
+    if metrics.inconsistent_trip_duration > 0:
+        raise ValueError("Silver contains trip_duration_minutes inconsistent with timestamps")
+
+    print(f"Silver validation passed: {metrics.total_rows} rows")
 
 def write_silver(df):
     (df.write
@@ -160,8 +174,9 @@ def main():
 
     silver_test = spark.read.parquet(SILVER_PATH)
     print("PARQUET SCHEMA:")
-    silver.printSchema()
-    silver.show(5) # = df.head()
+    silver_test.printSchema()
+    silver_test.show(5)
+    validate_silver(silver_test)
 
     spark.stop()
 
