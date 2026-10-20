@@ -13,9 +13,26 @@ Kaggle -> Bronze (CSV) -> PySpark -> Silver (Parquet)
 ```
 
 Bronze, Silver e Gold estao implementadas. O PostgreSQL local ja pode ser
-iniciado com Docker Compose, e a estrutura das quatro tabelas esta definida em
-SQL. A carga da Gold no banco e a proxima etapa; o Airflow sera adicionado depois
-dos scripts individuais.
+iniciado com Docker Compose. A estrutura das tabelas esta definida em SQL e a
+carga dos Parquets no banco esta implementada. O Airflow sera adicionado depois
+da validacao dos scripts individuais.
+
+### Por que Gold em Parquet e PostgreSQL
+
+A Gold em Parquet e o resultado persistido das transformacoes analiticas. O
+PostgreSQL publica esse mesmo modelo para consultas SQL e BI. Essa separacao
+permite reutilizar a Gold ou recarregar o banco sem refazer Bronze -> Silver -> Gold.
+O custo e manter duas copias, coordenar sua atualizacao e operar o script de carga.
+
+Parquet e um formato de arquivo; DW e lakehouse descrevem arquiteturas e servicos
+de dados. Nossos diretorios Parquet nao oferecem, sozinhos, snapshots de tabelas,
+controle de escritores concorrentes ou transacao envolvendo as quatro tabelas.
+Um lakehouse pode usar arquivos Parquet sob um formato de tabela gerenciado,
+como Iceberg ou Delta. Uma Gold tambem pode residir diretamente em um DW.
+A escolha local atual prioriza entender e testar o fluxo batch completo.
+
+Referencias: [Apache Parquet](https://parquet.apache.org/docs/overview/) e
+[Apache Iceberg](https://iceberg.apache.org/docs/latest/).
 
 ## Preparacao e execucao
 
@@ -254,9 +271,101 @@ O arquivo `sql/validate_tables.sql` contem consultas para inspecionar tabelas,
 colunas, constraints e contagens. Pode ser executado no pgAdmin ou pelo mesmo
 comando anterior, trocando o arquivo de entrada.
 
-Criar a estrutura nao carrega os Parquets: as quatro tabelas ficam vazias nesta
-etapa. A proxima implementacao sera a carga automatizada, primeiro das dimensoes
-e depois da fato, seguida da comparacao das contagens com a Gold.
+Criar a estrutura nao carrega os Parquets. Depois da criacao das tabelas, execute
+a carga abaixo para disponibilizar os dados no PostgreSQL.
+
+## Carga Gold -> PostgreSQL
+
+O script `src/loading/gold_to_postgres.py` transfere os quatro Parquets da Gold
+para as tabelas existentes. As dimensoes e a fato ja foram construidas pelo Spark;
+a carga nao refaz os mapeamentos nem gera novos IDs.
+
+Com o banco ativo e o schema criado, execute na raiz do projeto:
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+python src/loading/gold_to_postgres.py
+```
+
+Fluxo:
+
+1. Ler metadados dos Parquets, conferir que todos existem e nao estao vazios.
+2. Conectar ao PostgreSQL com Psycopg usando apenas `.env.postgres`.
+3. Conferir as colunas das tabelas antes de modificar seus registros.
+4. Iniciar a transacao e limpar somente as quatro tabelas do modelo com um unico `TRUNCATE`, sem `CASCADE`.
+5. Carregar `dim_payment_type`, `dim_zone`, `dim_date` e, por ultimo, `fact_trips`.
+6. Comparar as contagens do PostgreSQL com as dos Parquets e conferir datas das viagens contra `dim_date`.
+7. Confirmar a transacao somente se todas as verificacoes passarem e atualizar as estatisticas com `ANALYZE`.
+
+### Lotes e consumo de memoria
+
+O PyArrow le os Parquets em lotes de ate 50.000 linhas. Cada lote e convertido em
+CSV em memoria e enviado com `COPY FROM STDIN`, sem criar arquivos CSV extras e
+sem usar `collect()` ou carregar toda a fato em Pandas. Um COPY por lote limita os
+eventos de verificacao das chaves estrangeiras; todos os lotes pertencem a mesma
+transacao. Nulos e strings vazias permanecem distintos. Virgulas, aspas e quebras
+de linha nos textos sao escapadas pelo escritor CSV.
+
+### Reexecucao e rollback
+
+A estrategia atual e **carga completa**, apropriada ao snapshot local deste
+projeto. Reexecutar substitui os dados das quatro tabelas pelo conteudo atual da
+Gold, sem acrescentar copias das mesmas viagens. Nao e uma carga incremental.
+Dados inseridos manualmente nessas quatro tabelas sao substituidos na reexecucao.
+
+O `TRUNCATE` e as cargas estao na mesma transacao. Uma falha no COPY, nas chaves ou
+nas validacoes desfaz a tentativa inteira e preserva a versao anterior. Durante
+essa transacao, consultas concorrentes podem aguardar a liberacao dos locks.
+O script espera ate 10 segundos para adquirir locks, em vez de aguardar
+indefinidamente uma transacao aberta no pgAdmin.
+
+As chaves e constraints do banco permanecem ativas durante a carga. Os Parquets
+Gold devem permanecer inalterados enquanto a carga esta em execucao: execute
+Silver -> Gold e Gold -> PostgreSQL sequencialmente.
+
+### Horarios e valores monetarios
+
+A Gold atual foi escrita pelo Spark com sessao `America/Sao_Paulo`, como mostrado
+nos logs de sua geracao. O Arrow le seus timestamps INT96 sem informar o fuso.
+A carga usa `GOLD_TIME_ZONE` para reproduzir os mesmos horarios de parede usados
+na geracao de `pickup_date_id` e `dropoff_date_id`, inclusive nas transicoes
+historicas de horario de verao. Isso evita deslocar viagens para outra data.
+Nao estamos reinterpretando os horarios de origem como horarios de Nova York.
+Se o contrato de fuso da Gold mudar, a carga deve ser ajustada junto; a validacao
+com `dim_date` interrompe a carga quando encontra divergencias de datas.
+
+O CSV envia a representacao decimal dos doubles da Gold para as colunas NUMERIC,
+sem impor duas casas decimais nem remover valores negativos. Isso nao recupera
+precisao que ja tenha sido perdida na origem.
+
+### Conferencia no pgAdmin e testes
+
+Abra `sql/validate_tables.sql` no Query Tool para conferir as contagens depois da
+carga. Para ver uma amostra da fato, use um limite em vez de pedir todos os registros:
+
+```sql
+SELECT trip_id, pickup_datetime, trip_distance, total_amount
+FROM public.fact_trips
+LIMIT 20;
+```
+
+Os testes de carga usam schemas temporarios separados, sem modificar `public`.
+Eles exigem o PostgreSQL ativo, `.env.postgres`, os Parquets Gold e permissao de
+criar schemas. Execute:
+
+```bash
+RUN_POSTGRES_TESTS=1 python -m unittest discover -s tests -p test_gold_to_postgres.py -v
+```
+
+A suite cobre horarios na virada de data, preservacao de valores e nulos, textos
+com caracteres especiais, reexecucao sem duplicatas e preservacao da carga
+anterior apos falha de FK, data inconsistente ou fonte vazia. Os testes de
+integracao sao ignorados na suite comum se `RUN_POSTGRES_TESTS` nao estiver ativo.
+
+Referencias: [Psycopg COPY](https://www.psycopg.org/psycopg3/docs/basic/copy.html),
+[transacoes](https://www.psycopg.org/psycopg3/docs/basic/transactions.html) e
+[PostgreSQL TRUNCATE](https://www.postgresql.org/docs/16/sql-truncate.html).
 
 ## Testes
 
@@ -275,5 +384,5 @@ amostra de 100.000 linhas (`seed=42`); seus resultados nao representam contagens
 do dataset completo. Limites estatisticos servem para monitoramento, sem remocao
 automatica de outliers.
 
-Proximas etapas: carregar as tabelas Gold no PostgreSQL, ampliar metricas de
-auditoria e, depois, introduzir Airflow para orquestracao.
+Proximas etapas: ampliar metricas de auditoria, criar consultas analiticas e,
+depois, introduzir Airflow para orquestracao.

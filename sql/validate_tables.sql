@@ -28,7 +28,7 @@ WHERE connamespace = 'public'::regnamespace
   )
 ORDER BY conrelid::regclass::text, conname;
 
--- Nesta etapa as tabelas estao vazias. A carga da Gold vem depois.
+-- Comparar estas contagens com os metadados dos Parquets Gold apos a carga.
 SELECT 'dim_payment_type' AS table_name, COUNT(*) AS total_rows FROM public.dim_payment_type
 UNION ALL
 SELECT 'dim_zone', COUNT(*) FROM public.dim_zone
