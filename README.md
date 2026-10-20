@@ -367,6 +367,168 @@ Referencias: [Psycopg COPY](https://www.psycopg.org/psycopg3/docs/basic/copy.htm
 [transacoes](https://www.psycopg.org/psycopg3/docs/basic/transactions.html) e
 [PostgreSQL TRUNCATE](https://www.postgresql.org/docs/16/sql-truncate.html).
 
+## Analytics: estudo historico para uma operacao piloto em NYC
+
+### Cenario e motivo da escolha
+
+Uma empresa de taxi esta avaliando uma operacao piloto em NYC e solicitou uma
+analise historica das viagens disponiveis para selecionar zonas e faixas de
+horario que merecem investigacao comercial. O dashboard sera uma entrega de
+analise exploratoria para orientar esse estudo inicial.
+
+Esse cenario conecta o trabalho de engenharia a uma decisao de negocio sem
+prometer o que o dataset nao mede. A entrega identifica padroes de embarques
+registrados e o perfil das viagens. Nao define tamanho de frota, nao estima lucro
+e nao garante que uma zona tenha passageiros sem atendimento. Por serem dados
+historicos, os resultados nao constituem uma recomendacao atual de entrada no
+mercado; um piloto real exigiria dados recentes e validacao em campo.
+
+### Cobertura verificada e recorte de analise
+
+Na verificacao local de 20/10/2026, a fato carregada possui 9.100.887 viagens.
+A consulta `sql/analytics/00_data_coverage.sql` audita todos os anos e encontrou
+130 viagens com embarques fora de 2018, com datas entre 2001 e 2032. O intervalo
+minimo/maximo, sozinho, portanto nao representa um periodo continuo de operacao.
+
+As consultas de negocio usam embarques de **01/01/2018 inclusive a 01/01/2019
+exclusive**: 9.100.757 viagens, distribuidas pelos 12 meses e pelos 365 dias de
+2018. Esse e um recorte analitico explicito, sem apagar ou corrigir as 130 viagens
+na Silver, na Gold ou no PostgreSQL. A auditoria continua exibindo esses registros.
+Se o periodo mudar, atualize o CTE `parameters` nas cinco consultas de negocio,
+mantenha as datas no primeiro dia do mes e execute novamente a auditoria.
+
+Ter pelo menos um embarque em cada dia nao comprova completude nem amostragem
+representativa. A fonte e o dataset do Kaggle indicado no inicio deste README;
+a pipeline local nao comprova o metodo de selecao desse extrato nem sua fracao
+do universo TLC. Nao extrapolar os totais para todo o mercado de NYC. O nome de
+um arquivo de referencia de 2018 nao substitui a verificacao das datas da fato.
+Nao confundir esta base tratada com a amostra de 100.000 linhas usada no notebook.
+
+### Perguntas, consultas e graos
+
+Todos os arquivos em `sql/analytics/` sao consultas `SELECT`, sem criar views,
+modificar tabelas ou recarregar os Parquets. Foram mantidos SQL, joins e CTEs
+explicitos para permitir a leitura e a execucao de cada analise separadamente.
+
+| Arquivo | Pergunta / finalidade | Uma linha representa | Uso futuro no dashboard |
+| --- | --- | --- | --- |
+| `00_data_coverage.sql` | Qual e a cobertura e quais pontos exigem cuidado? | Ano de embarque, sem recorte | Painel de qualidade e contexto |
+| `01_monthly_activity.sql` | Como o movimento registrado varia no ano? | Mes de embarque | Serie mensal e media por dia observado |
+| `02_pickup_zones.sql` | Onde se concentram os embarques da base? | Zona de embarque no periodo | Barras por zona e borough |
+| `03_zone_weekday_hour.sql` | Em quais dias e horarios ocorre o movimento em cada zona? | Zona x dia da semana x hora | Mapa de calor com filtro de zona |
+| `04_zone_trip_profile.sql` | Como tarifa, total, distancia e duracao variam entre zonas? | Zona de embarque no periodo | Comparacao de medias, medianas e volume |
+| `05_zone_monthly_activity.sql` | O movimento relativo de uma zona se mantem ao longo dos meses? | Zona de embarque x mes | Serie mensal por zona e participacao na base |
+
+O foco espacial e o **embarque**: local onde a viagem comeca, adequado a pergunta
+sobre posicionamento inicial. Zonas TLC sao unidades analiticas; nao equivalem
+necessariamente a bairros administrativos. `borough` identifica os grandes
+distritos. Nao interpretar o ranking como um ranking de rentabilidade.
+
+### Definicao dos indicadores
+
+- `trip_count`: numero de viagens tratadas no recorte, apos as regras da Silver.
+- Participacao: viagens da zona divididas por todas as viagens do recorte (ou do mes), multiplicado por 100. O denominador inclui a zona desconhecida. E participacao no **dataset**, nao market share.
+- Media por dia observado: viagens divididas pela quantidade de datas com algum embarque na base inteira do recorte ou mes. Dias sem viagens naquela zona tambem entram no denominador. `calendar_days` e `observed_days` permitem conferir a cobertura mensal.
+- Media por dia da semana/hora: viagens daquela zona e hora divididas por todos os dias observados daquele dia da semana. Por exemplo, os embarques de segunda-feira as 08h sao divididos pelo numero de segundas observadas, nao somente pelas segundas com viagens na zona.
+- Tarifa (`fare_amount`): componente de tarifa do taximetro. `total_amount` representa o total registrado cobrado do passageiro, com outros componentes; nao inclui gorjetas em dinheiro e nao representa receita liquida ou lucro.
+- Distancia em milhas e duracao em minutos: medidas preservadas da Gold. Medias e medianas sao apresentadas juntas porque valores extremos ainda existem; nao ha remocao adicional de outliers nesta etapa.
+- Somas e medias monetarias preservam zero e valores negativos. Nulos sao ignorados por `SUM`, `AVG` e `PERCENTILE_CONT`; `trips_with_fare` e `trips_with_total` informam os denominadores validos. A auditoria e o perfil exibem as contagens nao positivas. Um grupo so com nulos continua com medida nula, em vez de um zero artificial.
+
+As consultas mensais completam os 12 meses. A consulta de zona/mes completa os
+meses para cada zona com embarques no periodo. A de horarios completa as 24 horas
+para cada zona e dia da semana observado no recorte. Um zero representa ausencia
+de registros naquela combinacao, sem provar ausencia de demanda real. Uma media
+sem dias observados retorna `NULL`, evitando divisao por zero e falsa cobertura.
+
+A zona `-1` permanece em todas as agregacoes para reconciliar os totais, marcada
+com `is_mapped_zone = false`. Exiba sua participacao como limitacao e filtre
+`is_mapped_zone = true` ao escolher locais para investigar. Nao descarte essa
+categoria silenciosamente ou altere o denominador ao apresentar os percentuais.
+Zonas com poucas viagens exigem cautela; os arquivos nao impoem um corte de volume
+arbitrario nem uma pontuacao automatica de oportunidade.
+
+### Limites para a interpretacao empresarial
+
+- As viagens realizadas mostram movimento atendido. Faltam pedidos nao atendidos, oferta concorrente e tempo de espera para medir demanda reprimida.
+- Faltam custos e identificadores de motorista/veiculo para estimar lucro, utilizacao, receita por taxi ou necessidade de frota. `vendor_id` identifica o fornecedor tecnologico do registro, nao uma empresa de taxi a ser comparada.
+- O extrato nao possui um campo explicito de tipo de servico para comparar frotas yellow, green e FHV. O uso do dicionario TLC para interpretar medidas nao comprova a cobertura dessas categorias na fonte.
+- Datas e horas seguem os valores preservados na Gold e na carga, sem novo deslocamento de fuso. O fuso da sessao Spark descrito acima e um contrato tecnico, nao uma comprovacao independente do fuso da fonte. Apresente os resultados como horarios registrados; confirmar a semantica temporal da origem e necessario antes de definir escalas reais em NYC.
+- Comparacoes entre meses descrevem variacao observada em um unico ano. Nao comprovam sazonalidade recorrente nem crescimento do mercado; mudancas na composicao do extrato tambem podem afetar os resultados.
+
+Referencias para a interpretacao dos campos: [dicionario TLC de viagens yellow](https://www.nyc.gov/assets/tlc/downloads/pdf/data_dictionary_trip_records_yellow.pdf)
+e [origem e limites dos registros TLC](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page).
+O dicionario atual e usado para as definicoes das medidas, sem aplicar tarifas ou
+novos codigos de anos posteriores aos registros de 2018.
+
+### Como executar e validar
+
+No pgAdmin, conecte ao banco `nyc_taxi`, abra o Query Tool e use Open File para
+abrir os arquivos de `sql/analytics/`, comecando por `00_data_coverage.sql`.
+Execute cada arquivo completo: o CTE pertence ao SELECT que vem em seguida.
+Depois siga a numeracao para inspecionar os resultados. A consulta com medianas
+pode levar mais tempo porque precisa ordenar os valores dentro de cada zona.
+
+Tambem e possivel executar um arquivo pelo WSL, a partir da raiz do projeto:
+
+```bash
+docker compose exec -T postgres sh -c 'psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < sql/analytics/01_monthly_activity.sql
+```
+
+A soma de `trip_count` em cada consulta de negocio deve coincidir com a contagem
+de 2018 da auditoria. Em zona/mes, a soma das zonas de cada mes tambem deve
+coincidir com a consulta mensal. Percentuais arredondados podem nao somar
+exatamente 100. O arredondamento e somente de apresentacao, sem mudar os fatos.
+
+Validacao na base completa em 20/10/2026: as seis consultas foram executadas
+em uma transacao somente de leitura com snapshot consistente. As cinco consultas
+de negocio reconciliaram 9.100.757 viagens, e zona/mes reconciliou cada total
+mensal. A base de 2018 possui 140.537 embarques com zona desconhecida (cerca de
+1,54%), mantidos nos totais. A execucao produziu:
+
+| Consulta | Linhas de resultado |
+| --- | ---: |
+| Auditoria por ano | 11 |
+| Movimento mensal | 12 |
+| Zonas de embarque | 259, incluindo a desconhecida |
+| Zona x dia da semana x hora | 43.512 |
+| Perfil das viagens por zona | 259 |
+| Zona x mes | 3.108 |
+
+As maiores contagens de embarques na base foram LaGuardia Airport (1.981.984),
+JFK Airport (869.812) e Times Sq/Theatre District (299.952). Sao resultados
+descritivos do extrato; a concentracao reforca a necessidade de investigar sua
+composicao antes de generalizar para NYC ou recomendar a operacao em aeroportos.
+
+Os testes usam um schema isolado dentro de uma transacao desfeita ao terminar;
+nao modificam `public`. Com PostgreSQL ativo e `.env.postgres` configurado:
+
+```bash
+RUN_POSTGRES_TESTS=1 python -m unittest discover -s tests -p test_analytics.py -v
+```
+
+Cobrem fronteiras do periodo, reconciliacao de contagens, zona desconhecida,
+meses/horas sem registros, denominadores dos dias observados e preservacao de
+nulos, valores negativos e extremos nas medidas. Esses testes nao exigem os
+Parquets Gold: usam uma pequena massa controlada com resultados conhecidos.
+
+### Uso futuro no Power BI
+
+As consultas definem e validam as metricas antes dos graficos. A futura conexao
+podera usar o modelo dimensional ou views conforme o grao necessario. Nao juntar
+resultados agregados de graos diferentes como se fossem fatos individuais:
+isso pode multiplicar totais. A consulta de perfil e a de zona/hora agregam o
+periodo inteiro e nao respondem automaticamente a filtros mensais do BI.
+
+Contagens e somas podem ser reagrupadas em graos compativeis. Medias devem ser
+recalculadas com seus denominadores, percentuais com seus totais, e medianas
+sobre as viagens do novo grupo. Nao tirar media simples das medias nem somar
+medianas, percentuais ou totais mensais repetidos em cada linha de zona.
+
+A conclusao empresarial esperada e uma lista de zonas e horarios que merecem
+estudo de campo para o piloto, acompanhada de volume, perfil das viagens e
+estabilidade mensal. A recomendacao sera formulada depois da leitura dos
+resultados, sem definir antecipadamente que maior volume significa melhor local.
+
 ## Testes
 
 ```bash
@@ -384,5 +546,6 @@ amostra de 100.000 linhas (`seed=42`); seus resultados nao representam contagens
 do dataset completo. Limites estatisticos servem para monitoramento, sem remocao
 automatica de outliers.
 
-Proximas etapas: ampliar metricas de auditoria, criar consultas analiticas e,
-depois, introduzir Airflow para orquestracao.
+Proximas etapas: interpretar as consultas analiticas no contexto da operacao
+piloto, construir o dashboard no Power BI e, depois da validacao do fluxo
+completo, introduzir Airflow para orquestracao.
