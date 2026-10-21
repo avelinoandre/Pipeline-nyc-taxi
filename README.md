@@ -511,10 +511,10 @@ meses/horas sem registros, denominadores dos dias observados e preservacao de
 nulos, valores negativos e extremos nas medidas. Esses testes nao exigem os
 Parquets Gold: usam uma pequena massa controlada com resultados conhecidos.
 
-### Uso futuro no Power BI
+### Uso futuro no Streamlit
 
-As consultas definem e validam as metricas antes dos graficos. A futura conexao
-podera usar o modelo dimensional ou views conforme o grao necessario. Nao juntar
+As consultas definem e validam as metricas antes dos graficos. O futuro app Python podera
+consultar o PostgreSQL usando os arquivos SQL ou views conforme o grao necessario. Nao juntar
 resultados agregados de graos diferentes como se fossem fatos individuais:
 isso pode multiplicar totais. A consulta de perfil e a de zona/hora agregam o
 periodo inteiro e nao respondem automaticamente a filtros mensais do BI.
@@ -528,6 +528,68 @@ A conclusao empresarial esperada e uma lista de zonas e horarios que merecem
 estudo de campo para o piloto, acompanhada de volume, perfil das viagens e
 estabilidade mensal. A recomendacao sera formulada depois da leitura dos
 resultados, sem definir antecipadamente que maior volume significa melhor local.
+
+## Notebook de analise de negocio
+
+O notebook `notebooks/02_pilot_business_analysis.ipynb` investiga o cenario da
+operacao piloto com os dados tratados do PostgreSQL. O notebook 01 continua
+voltado a exploracao e qualidade da origem; o 02 conecta os resultados a
+perguntas empresariais, sem refazer as transformacoes Silver/Gold.
+
+Estrutura: contexto e objetivo, conexao, auditoria/reconciliacao, movimento mensal,
+zonas de embarque, dias/horarios, perfil das viagens, consistencia mensal e
+sintese exploratoria. Cada analise combina tabelas, graficos e interpretacao,
+explicando a implicacao para o estudo e os limites da conclusao.
+
+Use o VS Code conectado ao WSL e selecione o kernel da `.venv` do projeto.
+Abra o notebook e execute Restart Kernel -> Run All. Pode ser iniciado na raiz
+ou em `notebooks/`. O PostgreSQL deve estar ativo, as tabelas carregadas e as
+credenciais configuradas em `.env.postgres`. As bibliotecas ja estao em
+`requirements.txt`; nao e necessario instalar Streamlit para executar a analise.
+
+O notebook le os seis arquivos de `sql/analytics/` em uma transacao somente de
+leitura com snapshot consistente e encerra a conexao ao terminar. Somente os
+resultados agregados vao para pandas; os nove milhoes de fatos ficam no banco.
+As contagens por grao e por mes sao reconciliadas antes dos graficos. Os valores
+NUMERIC retornados sao convertidos para float apenas no pandas para facilitar
+analise e graficos, sem modificar a precisao armazenada no PostgreSQL.
+
+A selecao das tres zonas com maior volume e um criterio exploratorio explicito,
+sem criar uma pontuacao de oportunidade. Medias e medianas sao comparadas e os
+horarios de pico sao contextualizados. A consistencia mensal de volume nao
+comprova a consistencia mensal de cada pico de horario: essa pergunta exigiria
+um SQL com grao zona/mes/dia/hora, ainda fora desta etapa.
+
+Validacao local: nove celulas de codigo executadas em ordem, sem erros, com
+cinco graficos revisados e reconciliacao das contagens agregadas.
+
+O notebook e entregue com saidas executadas. Elas representam um snapshot da
+analise e precisam ser atualizadas apos uma nova carga. As credenciais nao sao
+exibidas; os resultados salvos sao agregados historicos e devem ser revisados
+antes de uma eventual publicacao. O app Streamlit sera implementado na proxima
+etapa, usando esta analise para definir paginas e indicadores; ainda nao existe
+um dashboard executavel neste repositorio.
+
+## Papel do Airflow na evolucao do projeto
+
+O Airflow coordenara a execucao dos scripts Bronze -> Silver -> Gold -> PostgreSQL:
+ordem das tarefas, dependencias, logs e tratamento de falhas. Ele nao substitui
+Spark, PostgreSQL ou Streamlit. O notebook continua sendo o ambiente de
+investigacao; nao precisa ser executado inteiro a cada carga. As validacoes
+obrigatorias de uma rotina automatica devem estar nos scripts e testes.
+
+O Streamlit consultara a ultima carga confirmada no PostgreSQL. Como a carga
+atual substitui os dados em uma transacao, consultas podem aguardar locks durante
+a atualizacao; o futuro app devera tratar tempo de espera e atualizacao de cache.
+
+Primeiro vamos concluir a analise e o dashboard e validar o fluxo completo.
+Depois, criar uma DAG inicialmente manual (`schedule=None`), sem agendar uma
+recarga diaria do mesmo extrato historico. Um agendamento sera definido quando
+houver uma fonte atualizada e uma politica de ingestao. A ingestao atual usa
+`force_download=True`; antes de automatizar, revisar esse comportamento para
+evitar downloads repetidos desnecessarios. Reexecucoes, tentativas e falhas entre
+as camadas tambem precisam ser consideradas, especialmente a escrita sequencial
+dos quatro diretorios Gold. O Airflow, sozinho, nao torna essa escrita atomica.
 
 ## Testes
 
@@ -547,5 +609,5 @@ do dataset completo. Limites estatisticos servem para monitoramento, sem remocao
 automatica de outliers.
 
 Proximas etapas: interpretar as consultas analiticas no contexto da operacao
-piloto, construir o dashboard no Power BI e, depois da validacao do fluxo
+piloto, construir o dashboard no Streamlit e, depois da validacao do fluxo
 completo, introduzir Airflow para orquestracao.
