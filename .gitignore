@@ -9,3 +9,5 @@ data/gold/*
 __pycache__/
 *.py[cod]
 .env.postgres
+.venv-airflow/
+.airflow/

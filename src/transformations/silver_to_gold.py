@@ -1,3 +1,5 @@
+import os
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     coalesce, col, count, countDistinct, date_format, dayofmonth,
@@ -16,7 +18,7 @@ def create_spark_session():
     spark = (
         SparkSession.builder
         .appName("NYC Taxi Silver to Gold")
-        .master("local[*]")
+        .master(os.environ.get("SPARK_MASTER", "local[*]"))
         .getOrCreate()
     )
 

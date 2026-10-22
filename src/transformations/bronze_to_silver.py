@@ -1,3 +1,5 @@
+import os
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, to_timestamp, unix_timestamp, datediff, to_date, count, sum as spark_sum, when
 
@@ -10,7 +12,7 @@ def create_spark_session():
 
         SparkSession.builder
         .appName("NYC Taxi Bronze to Silver")
-        .master("local[*]")
+        .master(os.environ.get("SPARK_MASTER", "local[*]"))
         .getOrCreate()
 
     )
