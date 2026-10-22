@@ -65,6 +65,7 @@ seaborn==0.13.2
 six==1.17.0
 stack-data==0.6.3
 statsmodels==0.15.0
+streamlit==1.65.0
 tornado==6.5.8
 tqdm==4.70.0
 traitlets==5.16.1

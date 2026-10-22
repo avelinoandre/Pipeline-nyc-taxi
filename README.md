@@ -511,10 +511,10 @@ meses/horas sem registros, denominadores dos dias observados e preservacao de
 nulos, valores negativos e extremos nas medidas. Esses testes nao exigem os
 Parquets Gold: usam uma pequena massa controlada com resultados conhecidos.
 
-### Uso futuro no Streamlit
+### Uso dos indicadores no Streamlit
 
-As consultas definem e validam as metricas antes dos graficos. O futuro app Python podera
-consultar o PostgreSQL usando os arquivos SQL ou views conforme o grao necessario. Nao juntar
+As consultas definem e validam as metricas antes dos graficos. O app Python
+consulta o PostgreSQL usando os mesmos arquivos SQL do notebook. Nao juntar
 resultados agregados de graos diferentes como se fossem fatos individuais:
 isso pode multiplicar totais. A consulta de perfil e a de zona/hora agregam o
 periodo inteiro e nao respondem automaticamente a filtros mensais do BI.
@@ -566,9 +566,292 @@ cinco graficos revisados e reconciliacao das contagens agregadas.
 O notebook e entregue com saidas executadas. Elas representam um snapshot da
 analise e precisam ser atualizadas apos uma nova carga. As credenciais nao sao
 exibidas; os resultados salvos sao agregados historicos e devem ser revisados
-antes de uma eventual publicacao. O app Streamlit sera implementado na proxima
-etapa, usando esta analise para definir paginas e indicadores; ainda nao existe
-um dashboard executavel neste repositorio.
+antes de uma eventual publicacao. A primeira versao do Streamlit usa esta analise
+para definir suas secoes e indicadores. A investigacao permanece no notebook;
+o dashboard executa os SQLs diretamente, sem depender das saidas salvas.
+
+## Dashboard local em Streamlit
+
+A primeira versao do dashboard esta em `app.py`. Ela transforma as perguntas e
+as interpretacoes do notebook 02 em uma interface interativa para explorar o
+estudo historico da operacao piloto. Usa Streamlit para a interface, Plotly para
+os graficos e o PostgreSQL para as agregacoes. Nao exige executar o notebook.
+
+### Executar
+
+No terminal WSL, na raiz do projeto, com as tabelas ja carregadas:
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+docker compose up -d --wait postgres
+python -m streamlit run app.py
+```
+
+Abra [http://127.0.0.1:8501](http://127.0.0.1:8501) no navegador Windows.
+O servidor e local e pode ser encerrado com Ctrl+C no terminal. A primeira
+consulta pode levar alguns minutos: ela agrega a base completa antes de exibir
+os indicadores. A porta, o endereco local, o tema e a desativacao de estatisticas
+de uso estao em `.streamlit/config.toml`. Se a porta 8501 estiver ocupada, use
+`python -m streamlit run app.py --server.port 8502` e acesse a porta correspondente.
+O Python instalado no Windows nao substitui a `.venv` do WSL.
+
+| Secao | O que permite investigar |
+| --- | --- |
+| Visao executiva | Decisao, proposta, evidencias, incertezas e encaminhamento para o estudo de campo |
+| Panorama | Volume mensal ou media por dia observado na base completa de 2018 |
+| Zonas e meses | Ranking por distrito e evolucao mensal de ate cinco zonas selecionadas |
+| Dias e horarios | Mapas de calor por zona, com escala de cores comum |
+| Perfil das viagens | Media e mediana de tarifa, total cobrado, distancia ou duracao |
+| Cobertura e metodo | Registros fora de 2018, limitacoes e exportacao da auditoria em CSV |
+
+### Por que a entrada e uma visao executiva
+
+O publico da apresentacao e a equipe de estrategia de uma empresa de taxi.
+Por isso, a tela inicial organiza a conversa em torno de uma decisao empresarial,
+com o roteiro: **decisao -> proposta -> evidencias -> incertezas -> proximo passo**.
+O notebook continua documentando a investigacao; as demais secoes do Streamlit
+permitem aprofundar perguntas durante a apresentacao.
+
+A decisao nesta etapa e escolher o foco de uma investigacao de campo. A selecao
+inicial usa as tres zonas mapeadas com mais embarques: LaGuardia, JFK e Times
+Square. Elas formam uma hipotese de comparacao entre aeroportos e um polo urbano,
+sem assumir que os aeroportos sejam a melhor oportunidade de entrada. Ao mudar
+as zonas na barra lateral, os textos e indicadores se referem a nova selecao.
+
+A proposta aparece antes dos numeros. As evidencias incluem volume e participacao
+das zonas no extrato completo, medianas por zona, picos registrados e presenca
+mensal. Os indicadores da visao executiva se referem a selecao, enquanto os
+indicadores gerais das demais secoes continuam sobre toda a base de 2018.
+Nao se somam medianas nem se troca o denominador dos percentuais ao selecionar
+zonas ou distritos. A presenca minima mensal e o menor numero de meses com
+embarques entre as zonas selecionadas, sem afirmar estabilidade de demanda.
+
+As incertezas relevantes ficam visiveis antes do encaminhamento: dados de 2018,
+selecao do extrato nao comprovada, zonas desconhecidas e ausencia de custos/oferta.
+Nao ficam escondidas somente em um expansor. Detalhes de calculo e auditoria
+continuam disponiveis nas areas de apoio.
+
+O encaminhamento proposto e aprovar o escopo de um estudo de campo para levantar
+oferta, espera, custos e dados recentes. A entrega esperada desse estudo e definir
+criterios para avaliar um piloto operacional, sem aprovar automaticamente frota
+ou inicio de operacao. Esse roteiro permite usar o dashboard como apoio visual
+para um pitch, sem exigir a leitura de todo o texto explicativo na reuniao.
+
+A versao executiva foi conferida no navegador com os dados reais. Na selecao
+inicial, as tres zonas reunem 3.151.748 embarques e 34,63% das viagens do recorte.
+O teste de interface verifica a ordem dos cinco blocos e a atualizacao dos
+percentuais quando a selecao muda, preservando a base completa no denominador.
+
+### Resultados: insights e resumo da visao executiva
+
+Os resultados abaixo correspondem ao snapshot analisado nas execucoes documentadas
+em 20 e 21/10/2026. O periodo dos dados e **2018**, nao 2026. As cinco consultas
+de negocio usam 9.100.757 viagens tratadas; os resultados representam o extrato
+local e nao uma estimativa de todo o mercado de NYC. As tabelas abaixo registram
+a selecao inicial do dashboard, sem os filtros que o usuario possa aplicar depois.
+
+#### Resumo para a equipe de estrategia
+
+> A proposta e investigar LaGuardia e JFK, usando Times Square como contraponto
+> urbano, antes de decidir sobre uma operacao piloto. Essas tres zonas concentram
+> 3.151.748 embarques, ou 34,63% das viagens do extrato de 2018, e possuem registros
+> em todos os 12 meses. Seus perfis de viagem e horarios de maior movimento sao
+> diferentes. O encaminhamento e definir um estudo de campo para avaliar oferta,
+> espera, custos e dados recentes; ainda nao ha evidencia para aprovar frota ou
+> concluir que operar nessas zonas sera rentavel.
+
+Essa sintese segue o roteiro do pitch: decisao sobre onde investigar, proposta
+inicial de zonas, evidencias, incertezas e proximo passo. A selecao das tres zonas
+foi feita pelo maior volume de embarques mapeados; nao e uma classificacao de
+viabilidade, lucro ou demanda nao atendida.
+
+#### Insight 1: o movimento registrado se concentra em poucos polos
+
+| Zona de embarque | Viagens em 2018 | Participacao no extrato |
+| --- | ---: | ---: |
+| LaGuardia Airport | 1.981.984 | 21,78% |
+| JFK Airport | 869.812 | 9,56% |
+| Times Sq/Theatre District | 299.952 | 3,30% |
+
+LaGuardia e o maior polo de embarques dessa base, seguido por JFK e Times Square.
+A concentracao fornece um criterio explicito para priorizar a investigacao.
+Comparar os dois aeroportos com um polo urbano permite investigar contextos
+operacionais diferentes, sem presumir que aeroportos sejam a melhor entrada.
+
+A participacao conjunta de 34,63% e calculada sobre as contagens originais, antes
+do arredondamento; nao e a soma dos percentuais individuais ja arredondados.
+Os denominadores incluem os embarques com zona desconhecida. Todos esses
+percentuais sao participacoes no extrato, nao market share da cidade.
+
+#### Insight 2: uma tarifa maior acompanha um perfil diferente de viagem
+
+| Zona | Tarifa mediana (USD) | Distancia mediana (milhas) | Duracao mediana (minutos) |
+| --- | ---: | ---: | ---: |
+| LaGuardia Airport | 32,50 | 10,00 | 31,38 |
+| JFK Airport | 50,50 | 16,59 | 37,58 |
+| Times Sq/Theatre District | 30,50 | 8,87 | 32,40 |
+
+JFK combina as maiores medianas de tarifa, distancia e duracao entre as tres
+zonas. Isso indica um perfil de viagem diferente, que deve entrar na comparacao
+operacional. Nao demonstra que JFK tenha melhor margem, nem prova uma relacao
+causal entre essas medidas: faltam custos, deslocamentos sem passageiros e oferta.
+Cada mediana descreve sua propria distribuicao; esses valores nao caracterizam
+necessariamente uma mesma viagem e nao devem ser somados ou divididos para
+calcular uma margem ou uma taxa tipica por hora.
+
+As medias e medianas sao apresentadas juntas nas analises de apoio porque ainda
+existem valores extremos. Em LaGuardia, por exemplo, a duracao media e 35,78 min
+e a mediana e 31,38 min. A diferenca ajuda a avaliar o perfil da distribuicao,
+sem identificar sozinha a causa ou justificar a exclusao de registros.
+
+#### Insight 3: os picos registrados variam entre as zonas
+
+| Zona | Dia e hora do pico registrado | Media de embarques nessa combinacao |
+| --- | --- | ---: |
+| LaGuardia Airport | Domingo, 21h | 453,27 |
+| JFK Airport | Domingo, 22h | 211,19 |
+| Times Sq/Theatre District | Quarta-feira, 22h | 63,19 |
+
+O pico e a combinacao de dia da semana e hora com maior media de embarques por
+dia da semana observado no ano. O denominador inclui todos os dias observados
+daquele dia da semana, inclusive quando nao houve viagem na zona/hora. Em
+empates, o dashboard mostra a primeira combinacao na ordem do SQL.
+
+Essas combinacoes ajudam a escolher faixas para observacao em campo. Nao sao
+escalas de motoristas, volume por taxi ou horarios locais de NYC comprovados:
+a semantica temporal da fonte ainda precisa ser confirmada. Tambem nao foi
+verificado se o mesmo pico se repete em cada mes.
+
+#### Insight 4: existe presenca anual, com variacao de participacao mensal
+
+| Zona | Meses com registros | Menor participacao mensal | Maior participacao mensal |
+| --- | ---: | ---: | ---: |
+| LaGuardia Airport | 12 de 12 | 19,18% | 23,80% |
+| JFK Airport | 12 de 12 | 8,53% | 11,13% |
+| Times Sq/Theatre District | 12 de 12 | 3,19% | 3,40% |
+
+As tres zonas aparecem ao longo do ano, portanto seu destaque nao depende apenas
+de um unico mes com registros. Times Square tem a menor amplitude de participacao
+mensal entre as tres. Isso descreve participacao relativa na base, sem demonstrar
+volume constante ou demanda estavel. Variacoes nas demais zonas e na composicao
+do extrato tambem afetam esses percentuais.
+
+No panorama geral, marco apresenta a maior media diaria observada, com
+30.143,10 viagens por dia; agosto apresenta a menor, com 21.152,32. A media diaria
+ajuda a comparar meses com quantidades diferentes de dias. Um unico ano e uma
+cobertura nao comprovada impedem interpretar essa diferenca como sazonalidade
+recorrente ou crescimento/retracao do mercado.
+
+#### Limites que acompanham os insights
+
+Ha 140.537 embarques sem zona identificada em 2018, aproximadamente 1,54% do
+recorte. Eles permanecem nos totais. Outras 130 viagens da fato possuem embarques
+fora de 2018 e ficam visiveis na auditoria, sem entrar nas consultas de negocio.
+Os 365 dias com registros nao comprovam cobertura completa; a selecao do extrato
+nao foi verificada. Valores cobrados nao representam lucro e viagens realizadas
+nao medem demanda nao atendida.
+
+O resultado pratico desta etapa e uma **hipotese de investigacao**, com zonas e
+faixas de horario para validar, e nao uma recomendacao de iniciar a operacao.
+Fontes internas: `sql/analytics/00_data_coverage.sql` a `05_zone_monthly_activity.sql`,
+saidas executadas de `notebooks/02_pilot_business_analysis.ipynb` e visao executiva
+de `app.py`. Apos nova carga ou mudanca de regra, reexecutar as consultas e revisar
+esta sintese: os numeros do README sao um registro estatico, nao dados atualizados
+automaticamente pelo Streamlit.
+
+### Por que cada grafico foi escolhido
+
+Os graficos foram escolhidos pela pergunta de negocio e pelo grao de cada
+consulta. A visao executiva destaca a proposta e poucas evidencias; as demais
+secoes permitem investigar os resultados e responder perguntas da equipe.
+
+| Visual / local no dashboard | Pergunta que apoia | Motivo da escolha | Cuidados de leitura |
+| --- | --- | --- | --- |
+| Cartoes de indicadores e de zonas / Visao executiva | Qual e a dimensao da selecao e o perfil de cada zona? | Reunem poucos numeros, unidades e horarios para leitura rapida durante o pitch. Os cartoes sao resumos numericos, nao uma nova agregacao dos fatos. | A participacao usa todas as viagens do recorte no denominador; as medianas continuam por zona. O volume alto nao representa lucro ou demanda reprimida. |
+| Linhas de participacao mensal / Visao executiva | O destaque das zonas aparece durante o ano ou se concentra em meses especificos? | O eixo temporal ordenado permite acompanhar trajetorias e comparar a participacao relativa das zonas. Marcadores deixam explicitos os meses observados e as cores identificam as zonas. | Presenca e participacao nao comprovam estabilidade de demanda. Nao somar percentuais de meses diferentes nem extrapolar a serie para outros anos. |
+| Barras verticais por mes / Panorama | Em quais meses o extrato tem maior volume ou maior media diaria? | Meses sao categorias ordenadas; a altura das barras facilita comparar suas magnitudes. A opcao de media diaria considera a quantidade de dias observados em cada mes. | A media usa dias com registros na base, sem comprovar completude. Total e media diaria sao alternativas de leitura, com unidades diferentes. |
+| Barras horizontais ordenadas / Zonas e meses | Quais zonas concentram os embarques registrados? | O comprimento das barras facilita comparar volumes e a orientacao horizontal acomoda nomes longos de zonas. A ordenacao torna as maiores concentracoes visiveis. | O ranking e descritivo e pode ser limitado por distrito; os percentuais continuam sobre a base completa, sem trocar o denominador para o distrito. |
+| Linhas de participacao ou media diaria por zona / Zonas e meses | Como evoluem as zonas selecionadas nos 12 meses? | Uma linha por zona permite comparar trajetorias. A participacao mostra o peso relativo na base mensal; a media diaria mostra movimento ajustado pelos dias observados. | As duas medidas respondem a perguntas diferentes. Uma participacao pode mudar porque outras zonas mudaram, mesmo sem a mesma variacao no volume da zona analisada. |
+| Mapas de calor de dia da semana x hora / Dias e horarios | Quais combinacoes concentram o movimento em cada zona? | A grade 7 x 24 revela padroes e concentracoes em duas dimensoes temporais. A cor representa a media por dia da semana observado, permitindo enxergar faixas vizinhas ao pico. | As zonas da mesma selecao usam a mesma escala de cores. Ao mudar a selecao, o limite da escala pode mudar; comparar valores e legenda. A media nao e produtividade por taxi e o fuso da fonte precisa ser confirmado. |
+| Barras agrupadas de media e mediana / Perfil das viagens | Como tarifa, total cobrado, distancia e duracao variam entre as zonas? | As duas barras por zona permitem comparar nivel e diferenca entre media e mediana. Cada medida tem seu proprio grafico/unidade, conforme a escolha do usuario. | Nulos sao ignorados pelos agregadores; zeros, negativos e extremos sao preservados. A diferenca entre media e mediana nao identifica sua causa. Nao reagrupar medianas nem interpretar valores cobrados como lucro. |
+| Tabelas de denominadores e cobertura / Panorama, Perfil e Cobertura e metodo | Qual e a base de calculo e quais limitacoes afetam a interpretacao? | Tabelas preservam valores exatos, contagens validas, dias observados e referencias desconhecidas para conferencia. Sustentam os graficos quando a equipe pede detalhes. | Sao materiais de apoio, com possibilidade de exportacao. Devem ser lidos no mesmo periodo e grao do indicador que explicam. |
+
+A escolha visual faz parte da interpretacao: cores consistentes, unidades
+explicitas e denominadores identificados evitam que diferencas de apresentacao
+sejam confundidas com diferencas reais de negocio. Os graficos sustentam a
+hipotese do pitch; nao substituem a verificacao das limitacoes da fonte.
+
+### Escopo dos filtros e das medidas
+
+O recorte desta versao e fixo: embarques de 2018. O distrito limita as opcoes de
+zonas e o ranking; as zonas selecionadas alteram os comparativos de evolucao,
+horarios e perfil. Os cartoes gerais e o Panorama permanecem sobre toda a base
+de 2018, como identificado na interface. A zona desconhecida participa desses
+totais e dos denominadores, mas nao aparece como local para selecionar.
+
+Nao existe filtro mensal global: os SQLs de horarios e perfil estao agregados
+para o ano inteiro e nao permitem recalcular essas medidas corretamente por mes.
+A serie por zona/mes usa o SQL especifico desse grao. Nao fazemos media das
+medianas, nao somamos percentuais e nao somamos totais mensais repetidos por zona.
+Ao filtrar distritos, o percentual continua representando a participacao da zona
+na base completa, sem trocar silenciosamente o denominador para o distrito.
+
+### Consulta, cache e falhas
+
+`src/dashboard/data.py` le os mesmos seis SQLs versionados em `sql/analytics/`,
+consulta o PostgreSQL em uma transacao somente de leitura com snapshot consistente
+e fecha a conexao. As credenciais sao lidas de `.env.postgres` com caminho absoluto
+a partir do projeto e nao sao exibidas. As tabelas nao sao alteradas. Os resultados
+sao reconciliados por grao e por mes antes de renderizar a interface.
+
+O app armazena somente agregados em memoria com `st.cache_data`, TTL de 15 minutos
+e uma entrada de cache. Navegar ou filtrar nao repete os SQLs durante esse periodo.
+O texto dos arquivos SQL faz parte da chave do cache: alterar uma consulta provoca
+nova leitura no proximo rerun. O cache e compartilhado entre sessoes deste servidor
+local, sem persistencia em disco. Nao e um mecanismo de isolamento entre usuarios
+ou bancos diferentes; esta versao usa uma unica base local de desenvolvimento.
+
+Depois de uma nova carga, use **Atualizar dados** para invalidar o cache e obter
+outro snapshot. O botao apenas consulta; nao executa ingestao, Spark ou carga da
+Gold. A data exibida e o horario da consulta (Brasilia), nao a data de atualizacao
+da fonte. Expirar o TTL nao agenda consultas em segundo plano: a proxima interacao
+com o app inicia a consulta. Depois de alterar credenciais, reinicie o app ou
+atualize os dados para abandonar os agregados anteriores.
+
+Conexao: timeout de 10 segundos. Espera por locks: 10 segundos. Cada SQL tem limite
+de cinco minutos. Se houver indisponibilidade, falta de configuracao ou resultados
+inconsistentes, o app interrompe a exibicao com uma mensagem generica, sem mostrar
+senhas ou traceback. O usuario local ainda e administrador de desenvolvimento;
+a transacao somente de leitura nao substitui um usuario de banco com permissoes
+restritas quando houver publicacao ou outros usuarios.
+
+Se a tela indicar falha, confira `docker compose ps`, as contagens de
+`sql/validate_tables.sql` e a configuracao local de `.env.postgres`, sem publicar
+seu conteudo. Corrija a causa e clique em Atualizar dados. Esta versao nao inclui
+autenticacao ou publicacao na internet; o servidor escuta somente em localhost.
+
+### Testes do dashboard
+
+```bash
+python -m unittest discover -s tests -p test_dashboard.py -v
+```
+
+Validacao local em 21/10/2026: a interface foi conferida no navegador com a
+base real (9.100.757 viagens de 2018, 365 dias observados, 258 zonas identificadas
+e 1,54% de embarques sem zona). As seis consultas reconciliaram e as secoes de exploracao
+foram percorridas, incluindo mapas de calor e comparacoes de medias/medianas.
+Os cartoes foram ajustados para preservar os numeros completos em janelas menores.
+
+Nove testes verificam reconciliacao, deslocamento de contagens entre meses,
+navegacao, roteiro executivo, participacao da selecao sobre a base completa,
+comparacao das medidas, filtro de distrito, selecao vazia, uso do cache,
+atualizacao explicita e falha de conexao sem expor credenciais. Usam AppTest para
+executar o app real com agregados controlados, sem depender do PostgreSQL.
+
+Referencias: [cache Streamlit](https://docs.streamlit.io/develop/concepts/architecture/caching),
+[testes com AppTest](https://docs.streamlit.io/develop/api-reference/app-testing/st.testing.v1.apptest)
+e [graficos Plotly no Streamlit](https://docs.streamlit.io/develop/api-reference/charts/st.plotly_chart).
 
 ## Papel do Airflow na evolucao do projeto
 
@@ -578,12 +861,12 @@ Spark, PostgreSQL ou Streamlit. O notebook continua sendo o ambiente de
 investigacao; nao precisa ser executado inteiro a cada carga. As validacoes
 obrigatorias de uma rotina automatica devem estar nos scripts e testes.
 
-O Streamlit consultara a ultima carga confirmada no PostgreSQL. Como a carga
+O Streamlit consulta a ultima carga confirmada no PostgreSQL. Como a carga
 atual substitui os dados em uma transacao, consultas podem aguardar locks durante
-a atualizacao; o futuro app devera tratar tempo de espera e atualizacao de cache.
+a atualizacao. O app limita a espera por locks e permite atualizar seu cache.
 
-Primeiro vamos concluir a analise e o dashboard e validar o fluxo completo.
-Depois, criar uma DAG inicialmente manual (`schedule=None`), sem agendar uma
+A analise e a primeira versao do dashboard estao implementadas. A proxima
+etapa de automacao e criar uma DAG inicialmente manual (`schedule=None`), sem agendar uma
 recarga diaria do mesmo extrato historico. Um agendamento sera definido quando
 houver uma fonte atualizada e uma politica de ingestao. A ingestao atual usa
 `force_download=True`; antes de automatizar, revisar esse comportamento para
@@ -603,11 +886,12 @@ IDs, integridade referencial e escrita/releitura com `overwrite`.
 
 ## EDA e proximas etapas
 
-O notebook atual e `notebooks/01_exploratory_analysis.ipynb`. A EDA trabalha com
+O notebook `notebooks/01_exploratory_analysis.ipynb` explora a origem e trabalha com
 amostra de 100.000 linhas (`seed=42`); seus resultados nao representam contagens
 do dataset completo. Limites estatisticos servem para monitoramento, sem remocao
 automatica de outliers.
 
-Proximas etapas: interpretar as consultas analiticas no contexto da operacao
-piloto, construir o dashboard no Streamlit e, depois da validacao do fluxo
-completo, introduzir Airflow para orquestracao.
+Proximas etapas: revisar os achados e a usabilidade do dashboard com o contexto
+empresarial e introduzir Airflow para orquestrar o fluxo validado. Filtros mensais
+para horarios e perfil exigirao novas consultas com grao adequado, caso sejam
+necessarios. A entrada real no mercado depende de dados atuais e estudo de campo.
