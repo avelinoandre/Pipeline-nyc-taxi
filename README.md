@@ -3,7 +3,16 @@
 Projeto de portfolio de Engenharia de Dados com dados de viagens NYC Taxi do
 [Kaggle](https://www.kaggle.com/datasets/neilclack/nyc-taxi-trip-data-google-public-data).
 As transformacoes usam PySpark em modo local e persistem as camadas Silver e Gold
-em Parquet.
+em Parquet. A apresentacao analitica usa Streamlit e a orquestracao usa Airflow.
+
+## Guia de leitura
+
+- [Reproducao passo a passo](docs/REPRODUCING.md).
+- [Registro de validacao da entrega](docs/VALIDATION.md).
+- [Resultados e resumo executivo](#resultados-insights-e-resumo-da-visao-executiva).
+- [Escolha de cada grafico](#por-que-cada-grafico-foi-escolhido).
+- [Dashboard Streamlit](#dashboard-local-em-streamlit).
+- [Orquestracao Airflow](#orquestracao-local-com-airflow).
 
 ## Arquitetura
 
@@ -12,10 +21,11 @@ Kaggle -> Bronze (CSV) -> PySpark -> Silver (Parquet)
        -> PySpark -> Gold (Parquet) -> PostgreSQL -> BI/Analytics
 ```
 
-Bronze, Silver e Gold estao implementadas. O PostgreSQL local ja pode ser
-iniciado com Docker Compose. A estrutura das tabelas esta definida em SQL e a
-carga dos Parquets no banco esta implementada. O Airflow sera adicionado depois
-da validacao dos scripts individuais.
+Bronze, Silver, Gold, carga PostgreSQL e dashboard Streamlit estao implementados.
+O PostgreSQL usa Docker Compose; a DAG manual do Airflow coordena os scripts em
+um ambiente Python separado no WSL. O [guia de reproducao](docs/REPRODUCING.md)
+reune instalacao, credenciais locais, disparo, verificacao e encerramento.
+O [registro de validacao](docs/VALIDATION.md) documenta a verificacao da entrega.
 
 ### Por que Gold em Parquet e PostgreSQL
 
@@ -49,10 +59,17 @@ Para o download, configure `KAGGLE_API_TOKEN` no arquivo local `.env`. Credencia
 ambiente virtual e arquivos das camadas de dados nao devem ser versionados.
 
 ```bash
+export SPARK_MASTER='local[2]'
+export TZ=America/Sao_Paulo
+export PYSPARK_SUBMIT_ARGS='--driver-memory 1g --conf spark.sql.session.timeZone=America/Sao_Paulo pyspark-shell'
 python src/ingestion/download_dataset.py
 python src/transformations/bronze_to_silver.py
 python src/transformations/silver_to_gold.py
 ```
+
+As variaveis fixam os mesmos recursos e fuso usados na DAG. Os dois nucleos
+limitam a concorrencia dentro do Spark no ambiente local. Nao execute esse fluxo
+manual enquanto uma execucao da DAG estiver usando os mesmos diretorios.
 
 As escritas usam `overwrite` para permitir reexecucoes locais. Cada tabela e um
 diretorio com arquivos `part-*.parquet`, e nao um arquivo unico. A Gold valida todas
@@ -122,8 +139,9 @@ referencia, inclusive 57, 104 e 105, recebem a mesma politica de desconhecidos.
 
 `dim_date` contem somente datas presentes no pickup ou dropoff da Silver, sem
 preencher dias sem viagens. `day_of_week` segue o Spark: 1 = domingo, 7 = sabado.
-A Gold mantem o fuso padrao da sessao, como a ingestao Silver; execute ambas no
-mesmo ambiente para manter a interpretacao das datas. O fuso em uso e mostrado no
+A Gold mantem o fuso da sessao, como a ingestao Silver; execute ambas no
+mesmo ambiente para manter a interpretacao das datas. A DAG fixa explicitamente
+`America/Sao_Paulo` nas duas transformacoes, preservando o contrato da carga. O fuso em uso e mostrado no
 inicio da execucao. Nao ha conversao dos horarios de origem nem correcao de horario
 de verao. Somente a serializacao usada pelo hash fixa UTC, sem mudar as colunas.
 
@@ -577,6 +595,16 @@ as interpretacoes do notebook 02 em uma interface interativa para explorar o
 estudo historico da operacao piloto. Usa Streamlit para a interface, Plotly para
 os graficos e o PostgreSQL para as agregacoes. Nao exige executar o notebook.
 
+### Imagens da entrega
+
+Visao executiva: decisao e proposta para o estudo de campo.
+
+![Visao executiva do estudo de operacao piloto](docs/images/streamlit-executive.jpg)
+
+Indicadores e perfis das tres zonas selecionadas, apos a carga validada pela DAG.
+
+![Evidencias por zona no dashboard](docs/images/streamlit-evidence.jpg)
+
 ### Executar
 
 No terminal WSL, na raiz do projeto, com as tabelas ja carregadas:
@@ -777,7 +805,7 @@ secoes permitem investigar os resultados e responder perguntas da equipe.
 | Barras agrupadas de media e mediana / Perfil das viagens | Como tarifa, total cobrado, distancia e duracao variam entre as zonas? | As duas barras por zona permitem comparar nivel e diferenca entre media e mediana. Cada medida tem seu proprio grafico/unidade, conforme a escolha do usuario. | Nulos sao ignorados pelos agregadores; zeros, negativos e extremos sao preservados. A diferenca entre media e mediana nao identifica sua causa. Nao reagrupar medianas nem interpretar valores cobrados como lucro. |
 | Tabelas de denominadores e cobertura / Panorama, Perfil e Cobertura e metodo | Qual e a base de calculo e quais limitacoes afetam a interpretacao? | Tabelas preservam valores exatos, contagens validas, dias observados e referencias desconhecidas para conferencia. Sustentam os graficos quando a equipe pede detalhes. | Sao materiais de apoio, com possibilidade de exportacao. Devem ser lidos no mesmo periodo e grao do indicador que explicam. |
 
-A escolha visual faz parte da interpretacao: cores consistentes, unidades
+A escolha visual faz parte da interpretacao: cores com legendas, unidades
 explicitas e denominadores identificados evitam que diferencas de apresentacao
 sejam confundidas com diferencas reais de negocio. Os graficos sustentam a
 hipotese do pitch; nao substituem a verificacao das limitacoes da fonte.
@@ -853,26 +881,105 @@ Referencias: [cache Streamlit](https://docs.streamlit.io/develop/concepts/archit
 [testes com AppTest](https://docs.streamlit.io/develop/api-reference/app-testing/st.testing.v1.apptest)
 e [graficos Plotly no Streamlit](https://docs.streamlit.io/develop/api-reference/charts/st.plotly_chart).
 
-## Papel do Airflow na evolucao do projeto
+## Orquestracao local com Airflow
 
-O Airflow coordenara a execucao dos scripts Bronze -> Silver -> Gold -> PostgreSQL:
-ordem das tarefas, dependencias, logs e tratamento de falhas. Ele nao substitui
-Spark, PostgreSQL ou Streamlit. O notebook continua sendo o ambiente de
-investigacao; nao precisa ser executado inteiro a cada carga. As validacoes
-obrigatorias de uma rotina automatica devem estar nos scripts e testes.
+A DAG `dags/nyc_taxi_pipeline.py` implementa a ordem das tarefas com
+`BashOperator`, reutilizando os scripts Python. O Airflow define dependencias,
+estados, logs e tentativas; Spark transforma os dados, PostgreSQL publica o
+modelo e Streamlit apresenta a analise. O notebook nao e executado pela DAG.
 
-O Streamlit consulta a ultima carga confirmada no PostgreSQL. Como a carga
-atual substitui os dados em uma transacao, consultas podem aguardar locks durante
-a atualizacao. O app limita a espera por locks e permite atualizar seu cache.
+```mermaid
+flowchart LR
+    K[Kaggle] --> B[Preparar Bronze]
+    B --> S[Gerar Silver]
+    S --> G[Gerar Gold]
+    G --> C[Criar estrutura SQL]
+    C --> P[Carregar PostgreSQL]
+    P --> V[Validar pipeline e consultas]
+    P --> D[Streamlit]
+```
 
-A analise e a primeira versao do dashboard estao implementadas. A proxima
-etapa de automacao e criar uma DAG inicialmente manual (`schedule=None`), sem agendar uma
-recarga diaria do mesmo extrato historico. Um agendamento sera definido quando
-houver uma fonte atualizada e uma politica de ingestao. A ingestao atual usa
-`force_download=True`; antes de automatizar, revisar esse comportamento para
-evitar downloads repetidos desnecessarios. Reexecucoes, tentativas e falhas entre
-as camadas tambem precisam ser consideradas, especialmente a escrita sequencial
-dos quatro diretorios Gold. O Airflow, sozinho, nao torna essa escrita atomica.
+As tarefas de Preparar Bronze ate Validar pipeline pertencem a DAG; Streamlit
+consulta o banco separadamente. A validacao final usa as mesmas seis consultas
+SQL do app, sem carregar a fato inteira em pandas. O relatorio local fica em
+`.airflow/validation/latest.json` e inclui a identificacao da execucao.
+
+### Ambientes separados e configuracao
+
+A pipeline e o app usam `.venv`; o Airflow 3.3.1 usa `.venv-airflow`, com as
+constraints oficiais para Python 3.10 em `requirements-airflow.txt`. Isso evita
+que dependencias fixadas do orquestrador alterem o ambiente Spark/Streamlit.
+Os comandos completos estao em [docs/REPRODUCING.md](docs/REPRODUCING.md).
+
+```bash
+python3.10 -m venv .venv-airflow
+.venv-airflow/bin/python -m pip install --upgrade pip
+.venv-airflow/bin/python -m pip install -r requirements-airflow.txt
+bash scripts/airflow.sh standalone
+```
+
+O lancador configura esta instancia na pasta `.airflow/` do checkout, interface
+em `127.0.0.1:8081`, usuario `andre` e senha gerada em `.airflow/ui_passwords.json`.
+A senha, as chaves locais, o banco de controle e os logs nao sao versionados.
+Nao usa a porta 8080 nem o banco de metadados de outros projetos Airflow.
+
+O modo standalone e destinado ao desenvolvimento local, com LocalExecutor e
+SQLite para os metadados de controle. Os dados analiticos continuam no PostgreSQL
+em Docker. Uma instalacao de producao precisaria de arquitetura, autenticacao,
+permissoes e banco de metadados adequados; nao e o objetivo desta entrega local.
+
+### Disparo, concorrencia e reexecucao
+
+Em outro terminal, depois de iniciar o PostgreSQL e o standalone:
+
+```bash
+bash scripts/airflow.sh dags list-import-errors --output json
+bash scripts/airflow.sh dags unpause nyc_taxi_pipeline
+bash scripts/airflow.sh dags trigger nyc_taxi_pipeline
+```
+
+A DAG usa `schedule=None`, `catchup=False`, uma execucao ativa e uma tarefa por
+vez. A fonte atual e um extrato historico, entao nao ha agendamento diario para
+repetir a mesma ingestao. Cada tarefa tem uma tentativa adicional apos dois
+minutos. As tarefas seguintes so iniciam depois do sucesso da anterior.
+
+A preparacao Bronze reutiliza os dois arquivos obrigatorios quando existentes e
+nao vazios. Download novo exige token; falhas propagam erro para o Airflow, em
+vez de terminar com sucesso aparente. `--force-download` permite atualizar a
+fonte deliberadamente fora de uma execucao ativa. Presenca de arquivo nao e uma
+comprovacao de completude: as etapas seguintes fazem as validacoes de dados.
+
+As duas transformacoes aceitam `SPARK_MASTER`, mantendo `local[*]` como padrao
+fora da DAG. A DAG define `local[2]`, driver de 1 GB e fuso `America/Sao_Paulo`.
+O limite de nucleos reduz a quantidade de tarefas Spark disputando memoria ao
+mesmo tempo. Esse ajuste foi motivado pelo estouro de heap observado durante
+a validacao com todos os nucleos; ele nao altera as regras de limpeza ou o modelo.
+
+Nao executar transformacoes manuais em paralelo com a DAG: os diretorios de
+Silver e Gold sao compartilhados. A escrita dos quatro diretorios Gold continua
+sequencial; Airflow nao a transforma em uma escrita atomica. Uma tarefa Gold que
+falhe deve ser reexecutada por completo antes da carga no banco.
+
+A carga PostgreSQL e transacional e preserva o banco anterior em caso de falha
+antes do COMMIT. A DAG inteira nao e uma transacao unica: uma falha da validacao
+analitica final nao desfaz um COMMIT ja concluido. O Streamlit usa cache proprio;
+**Atualizar dados** consulta outro snapshot, sem disparar a DAG. O usuario pode
+aguardar locks durante uma carga, com espera limitada pelo app.
+
+### Testes da orquestracao
+
+```bash
+.venv/bin/python -m unittest discover -s tests -p test_ingestion.py -v
+RUN_AIRFLOW_TESTS=1 AIRFLOW_HOME="$PWD/.airflow" .venv-airflow/bin/python -m unittest discover -s tests -p test_airflow_dag.py -v
+```
+
+Os testes verificam reutilizacao da Bronze, token ausente, atualizacao forcada,
+falha de download, arquivos ausentes apos download, importacao da DAG, execucao
+serial e dependencias com `all_success`. A execucao real e registrada separadamente
+em [docs/VALIDATION.md](docs/VALIDATION.md).
+
+Referencias: [quick start oficial Airflow 3.3.1](https://airflow.apache.org/docs/apache-airflow/3.3.1/start.html)
+e [arquitetura Airflow](https://airflow.apache.org/docs/apache-airflow/stable/core-concepts/overview.html).
 
 ## Testes
 
@@ -891,7 +998,8 @@ amostra de 100.000 linhas (`seed=42`); seus resultados nao representam contagens
 do dataset completo. Limites estatisticos servem para monitoramento, sem remocao
 automatica de outliers.
 
-Proximas etapas: revisar os achados e a usabilidade do dashboard com o contexto
-empresarial e introduzir Airflow para orquestrar o fluxo validado. Filtros mensais
-para horarios e perfil exigirao novas consultas com grao adequado, caso sejam
-necessarios. A entrada real no mercado depende de dados atuais e estudo de campo.
+A entrega local compreende pipeline batch, modelo dimensional, carga transacional,
+analise de negocio, dashboard e orquestracao manual. Evolucoes possiveis incluem
+carga incremental, atualizacao da fonte e publicacao do app. Filtros mensais para
+horarios e perfil exigirao consultas de grao adequado. A entrada real no mercado
+depende de dados atuais e estudo de campo, fora do escopo tecnico deste projeto.
