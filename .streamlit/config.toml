@@ -1,3 +1,20 @@
+[theme]
+font = "sans serif"
+
+[theme.light]
+primaryColor = "#B77900"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#E7EDF3"
+textColor = "#172B43"
+borderColor = "#CBD5E1"
+
+[theme.dark]
+primaryColor = "#B77900"
+backgroundColor = "#0E1623"
+secondaryBackgroundColor = "#172B43"
+textColor = "#E7EDF3"
+borderColor = "#526174"
+
 [server]
 address = "127.0.0.1"
 port = 8501
