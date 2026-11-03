@@ -73,7 +73,7 @@ valor_medio = df["total_amount"].mean()
 st.metric("Total médio cobrado (USD)", f"{valor_medio:.2f}")
 ```
 
-## Visual do rascunho
+## Visuais finais do Dashboard 2
 
 **Variável agrupada:** hora do embarque, derivada de `pickup_datetime`.
 **Visual:** barras com a quantidade de viagens por hora (0–23).
@@ -91,5 +91,20 @@ por_hora = (
 O notebook `notebooks/03_metricas_streamlit.ipynb` contém os cálculos em pandas
 e o gráfico prévio. O `app.py` calcula os mesmos indicadores para o recorte
 apresentado. Se não houver viagens, as médias são exibidas como “—”.
+
+Além das barras por hora, a versão final reutiliza as duas relações exploradas
+na EDA: **distância × tarifa** e **distância × duração**. Os dois gráficos de
+dispersão usam até 5.000 viagens do recorte, com `random_state=42`, seguindo
+a abordagem de visualização da EDA; as barras e os KPIs continuam usando
+todo o recorte da amostra de 200.000 viagens.
+
+O clique em uma barra de horário seleciona as viagens exibidas nas duas
+dispersões; duplo clique limpa a seleção. As seleções internas dos gráficos não alteram os KPIs,
+que permanecem calculados para o intervalo da sidebar. Essa distinção é
+informada no próprio app para que os denominadores não sejam confundidos.
+
+As dispersões permitem investigar trajetos com tarifas ou durações distintas,
+sem atribuir causa, corrigir registros ou excluir extremos automaticamente.
+Zeros, valores negativos e extremos que permanecem na Silver são preservados.
 
 Fontes de conteúdo: Aula 22, slides 9 e 13–17, e enunciado da atividade.

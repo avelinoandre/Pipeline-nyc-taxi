@@ -16,8 +16,6 @@ textColor = "#E7EDF3"
 borderColor = "#526174"
 
 [server]
-address = "127.0.0.1"
-port = 8501
 headless = true
 
 [browser]

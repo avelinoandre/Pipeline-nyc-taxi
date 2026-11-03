@@ -1,3 +1,76 @@
+# NYC Taxi — dashboards em Streamlit
+
+Aplicação de Análise e Visualização de Dados baseada na EDA própria de viagens
+NYC Taxi. Permite explorar a relação entre distância, tarifa, duração, gorjeta e
+valor total e investigar o perfil operacional por horário. O interesse é unir
+análise de qualidade dos dados, exploração estatística e indicadores úteis para
+uma equipe de planejamento operacional.
+
+**App público:** [LINK DO APP]
+
+**Repositório:** https://github.com/avelinoandre/Pipeline-nyc-taxi
+
+## Dois dashboards
+
+- **Dashboard 1:** correlação de Pearson e um histograma por variável quantitativa selecionada. A sidebar controla variáveis e intervalo inclusivo de distância, em milhas.
+- **Dashboard 2:** quatro KPIs (viagens, distância média, duração média e total médio cobrado) e três visuais Altair: viagens por hora, distância × tarifa e distância × duração.
+
+Clique em uma barra de horário para filtrar as duas dispersões.
+Duplo clique limpa a seleção. As seleções internas afetam os gráficos; os KPIs
+seguem o intervalo da sidebar. O total cobrado não representa lucro, e a contagem
+não representa demanda não atendida.
+
+## Dados e escopo
+
+`data/clean/dataset.csv` contém uma amostra aleatória de **200.000 viagens** da
+Silver, sem reposição, com `seed=42`, aprovada pelo aluno. São aproximadamente
+21,7 MB. Os nove Parquets completos da Silver continuam versionados. O notebook
+`notebooks/03_metricas_streamlit.ipynb` documenta a geração do CSV e os cálculos.
+As dispersões reutilizam a abordagem da EDA com até **5.000 viagens**, selecionadas
+com `random_state=42` dentro do recorte; as barras e os KPIs usam todo o recorte.
+Os resultados descrevem a amostra histórica, não os totais da Silver nem a cidade.
+
+## Executar localmente
+
+Ambiente do app: **Python 3.12**. Na raiz do repositório, crie um ambiente virtual
+e instale `requirements.txt`. No PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m streamlit run app.py
+```
+
+Use Python 3.12 também em Advanced settings do Streamlit Community Cloud.
+O app lê somente o CSV tratado, por caminho relativo, e mantém o carregamento em
+`st.cache_data`. Não precisa de Java, Spark, PostgreSQL, Airflow ou credenciais.
+As dependências originais da pipeline e da EDA foram preservadas em
+`requirements-pipeline.txt`; o guia da pipeline permanece abaixo.
+
+## Stack e entrega
+
+- App: Python, Streamlit, pandas, Altair, Matplotlib e Seaborn.
+- Pipeline original: PySpark, Parquet, PostgreSQL, Docker Compose e Airflow.
+- EDA e validação: notebooks em `notebooks/`.
+- Rascunhos e justificativas: `entregas/rascunho-dashboard1.jpg`, `entregas/rascunho-dashboard2.jpg` e `entregas/justificativa-metricas.md`.
+- Uso de IA: `prompts/declaracao-uso-ia.md`.
+- Roteiro e testes: `ROTEIRO.md`.
+
+Os rascunhos são prints reais do app local, obtidos diretamente do navegador.
+Como apresentação de portfólio, sugere-se gravar um GIF curto alternando as abas,
+movendo o slider e usando a seleção cruzada. Nenhum GIF é incluído nesta etapa.
+
+`data/raw/`, ambientes virtuais e `secrets.toml` não devem ser versionados.
+
+---
+
+## Documentação histórica da pipeline
+
+As seções abaixo preservam o projeto de engenharia de dados que originou a EDA.
+As descrições do dashboard SQL e de seus testes correspondem ao app anterior
+à prática Streamlit. O `app.py` atual é a aplicação das Aulas 1–3 descrita acima;
+a execução da pipeline de dados continua documentada em `docs/REPRODUCING.md`.
+
 # NYC Taxi Data Engineering Pipeline
 
 Projeto de portfolio de Engenharia de Dados com dados de viagens NYC Taxi do
@@ -52,7 +125,7 @@ e Java compativel com a versao instalada do PySpark.
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-pipeline.txt
 ```
 
 Para o download, configure `KAGGLE_API_TOKEN` no arquivo local `.env`. Credenciais,
@@ -302,7 +375,7 @@ Com o banco ativo e o schema criado, execute na raiz do projeto:
 
 ```bash
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-pipeline.txt
 python src/loading/gold_to_postgres.py
 ```
 
@@ -563,7 +636,7 @@ Use o VS Code conectado ao WSL e selecione o kernel da `.venv` do projeto.
 Abra o notebook e execute Restart Kernel -> Run All. Pode ser iniciado na raiz
 ou em `notebooks/`. O PostgreSQL deve estar ativo, as tabelas carregadas e as
 credenciais configuradas em `.env.postgres`. As bibliotecas ja estao em
-`requirements.txt`; nao e necessario instalar Streamlit para executar a analise.
+`requirements-pipeline.txt`; nao e necessario instalar Streamlit para executar a analise.
 
 O notebook le os seis arquivos de `sql/analytics/` em uma transacao somente de
 leitura com snapshot consistente e encerra a conexao ao terminar. Somente os
@@ -611,7 +684,7 @@ No terminal WSL, na raiz do projeto, com as tabelas ja carregadas:
 
 ```bash
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-pipeline.txt
 docker compose up -d --wait postgres
 python -m streamlit run app.py
 ```

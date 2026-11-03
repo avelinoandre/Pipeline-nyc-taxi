@@ -25,7 +25,7 @@ docker compose version
 ```bash
 python3.10 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-pipeline.txt
 cp .env.example .env
 cp .env.postgres.example .env.postgres
 chmod 600 .env .env.postgres

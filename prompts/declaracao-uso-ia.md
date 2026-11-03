@@ -67,3 +67,34 @@ System foram restaurados ao final.
 O público-alvo e as métricas são propostas para revisão do aluno. O total
 cobrado não deve ser interpretado como lucro. O aluno aprovou explicitamente
 a lista de 12 arquivos antes do commit da Aula 2 e do push na branch main.
+
+## Aula 3
+
+Nesta etapa, a IA apoiou a finalização do Dashboard 2 com quatro métricas e
+três visuais Altair concatenados. Foram mantidos os indicadores já propostos,
+o CSV de 200.000 viagens, o carregamento em cache e a identidade visual.
+As relações distância × tarifa e distância × duração foram reaproveitadas
+da EDA, incluindo a seleção de até 5.000 viagens para as dispersões.
+
+Foi implementada e verificada no Chrome a seleção cruzada por horário:
+clicar em uma barra restringe as duas dispersões, e duplo clique limpa a
+seleção. As seleções internas dos visuais não alteram os KPIs. Os filtros
+da sidebar continuam afetando as duas abas, conforme a decisão do aluno.
+
+A IA preparou um ambiente Python 3.12 para validar o app na versão de Python
+escolhida para o deploy. As bibliotecas do app foram declaradas em
+`requirements.txt`; as dependências anteriores de pipeline/EDA foram
+preservadas em `requirements-pipeline.txt`. O README e o guia de reprodução
+foram ajustados para distinguir esses ambientes.
+
+Foram executados os testes de `tests/test_streamlit_aulas.py`, a checagem de
+dependências e a conferência visual local. Na seleção das 10 horas, cada
+dispersão exibiu 153 viagens, e o duplo clique restaurou os pontos. Os arquivos
+`entregas/rascunho-dashboard1.jpg` e `entregas/rascunho-dashboard2.jpg` são
+capturas reais do Chrome, sem geração ou redesenho por IA.
+
+Também foram preparados o README com descrição, stack, sugestão de GIF e o
+placeholder `[LINK DO APP]`, além do checklist de repositório. O app não inclui
+autenticação. Na preparação anterior ao primeiro commit desta aula, deploy,
+link real no README e teste anônimo público ainda não foram executados:
+devem ocorrer após o commit e push aprovados pelo aluno, na ordem solicitada.

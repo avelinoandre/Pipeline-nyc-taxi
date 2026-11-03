@@ -107,3 +107,39 @@ Capturas reais obtidas diretamente do navegador, sem geração de imagem:
 `entregas/rascunho-dashboard2.jpg` foi substituído pela captura real do
 Dashboard 2 no tema claro. A ilustração gerada anteriormente foi preservada
 fora do repositório, em `../referencias/rascunho-dashboard2-gerado-anterior.jpg`.
+
+## Aula 3 — versão final e publicação
+
+O Dashboard 2 mantém os quatro KPIs e agora contém três visuais Altair
+concatenados: viagens por hora, distância × tarifa e distância × duração.
+Clique em uma barra para restringir as duas dispersões à mesma hora e dê
+duplo clique para limpar a seleção. Os KPIs seguem o intervalo da sidebar.
+As dispersões usam até 5.000 viagens do recorte, com `random_state=42`,
+como na EDA; as barras e os KPIs usam todo o recorte da amostra de 200.000.
+
+O app foi validado em Python 3.12 com as versões de `requirements.txt`. As
+dependências anteriores da pipeline e dos notebooks foram preservadas em
+`requirements-pipeline.txt`; o guia `docs/REPRODUCING.md` foi ajustado.
+
+Execute os testes específicos da aplicação na raiz do projeto:
+
+```bash
+python -m unittest discover -s tests -p test_streamlit_aulas.py -v
+```
+
+Os testes verificam a base real, os quatro KPIs, os três visuais, a seleção de
+zero/uma/duas variáveis, recálculo pelo intervalo, cache e recorte sem viagens.
+No Chrome, a seleção das 10 horas restringiu as duas dispersões a 153 viagens
+cada, e o duplo clique restaurou os pontos. O teste visual e os dois prints
+foram feitos no app local com Python 3.12, na porta 8503.
+
+- `entregas/rascunho-dashboard1.jpg`: print real com distância e tarifa selecionadas, heatmap e dois histogramas.
+- `entregas/rascunho-dashboard2.jpg`: print real com quatro KPIs e três visuais.
+- `entregas/checklist-aula3.md`: estado da checagem antes do primeiro commit e do deploy.
+
+O primeiro commit precisa ser aprovado pelo aluno, usar a mensagem exata
+`aula 3` e ser enviado à `main` antes do deploy. O README mantém `[LINK DO APP]`
+até a publicação real. Depois do deploy, o link real deve ser preenchido,
+novamente aprovado, commitado com `aula 3` e enviado à `main`. O teste anônimo
+do app publicado será feito somente após essas etapas. Prints do teste
+publicado não devem entrar no commit sem novo pedido do aluno.

@@ -1,3 +1,8 @@
+import altair as alt
+import matplotlib
+
+# Renderização estática para Streamlit, sem abrir janelas do Matplotlib.
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import pandas as pd
@@ -41,6 +46,60 @@ def preparar_eixos(ax):
     ax.xaxis.label.set_color(AZUL)
     ax.yaxis.label.set_color(AZUL)
     ax.title.set_color(AZUL)
+
+
+def visuais_operacionais(recorte):
+    # A contagem usa todo o recorte; as dispersões seguem a amostra da EDA.
+    por_hora = (
+        recorte.groupby(recorte["pickup_datetime"].dt.hour)
+        .size().reindex(range(24), fill_value=0)
+        .rename_axis("hora_embarque").reset_index(name="viagens")
+    )
+    pontos = recorte[[
+        "trip_distance", "fare_amount", "trip_duration_minutes", "pickup_datetime"
+    ]].sample(n=min(5_000, len(recorte)), random_state=42)
+    pontos = pontos.assign(hora_embarque=pontos["pickup_datetime"].dt.hour)
+    pontos = pontos.drop(columns="pickup_datetime")
+    # As duas fontes usam a mesma representação categórica na seleção.
+    por_hora["hora_embarque"] = por_hora["hora_embarque"].astype(str)
+    pontos["hora_embarque"] = pontos["hora_embarque"].astype(str)
+
+    hora = alt.selection_point(
+        name="hora_selecionada", fields=["hora_embarque"],
+        toggle=False, clear="dblclick", empty=True,
+    )
+    barras = alt.Chart(por_hora).mark_bar().encode(
+        x=alt.X("hora_embarque:O", title="Hora de embarque", sort=[str(h) for h in range(24)]),
+        y=alt.Y("viagens:Q", title="Quantidade de viagens"),
+        color=alt.condition(hora, alt.value(AMARELO), alt.value(CINZA)),
+        tooltip=[
+            alt.Tooltip("hora_embarque:O", title="Hora"),
+            alt.Tooltip("viagens:Q", title="Viagens", format=","),
+        ],
+    ).add_params(hora).properties(
+        title="1. Viagens por hora — recorte completo", width=740, height=140
+    )
+
+    base = alt.Chart(pontos).mark_circle(color=AMARELO, opacity=0.45, size=24).encode(
+        x=alt.X("trip_distance:Q", title="Distância (milhas)", scale=alt.Scale(zero=False)),
+        tooltip=[
+            alt.Tooltip("hora_embarque:O", title="Hora"),
+            alt.Tooltip("trip_distance:Q", title="Distância (milhas)", format=".2f"),
+            alt.Tooltip("fare_amount:Q", title="Tarifa (USD)", format=".2f"),
+            alt.Tooltip("trip_duration_minutes:Q", title="Duração (min)", format=".2f"),
+        ],
+    ).transform_filter(hora)
+    tarifa = base.encode(
+        y=alt.Y("fare_amount:Q", title="Tarifa (USD)", scale=alt.Scale(zero=False))
+    ).properties(
+        title="2. Distância × tarifa", width=350, height=200
+    )
+    duracao = base.encode(
+        y=alt.Y("trip_duration_minutes:Q", title="Duração (min)", scale=alt.Scale(zero=False))
+    ).properties(
+        title="3. Distância × duração", width=350, height=200
+    )
+    return alt.vconcat(barras, alt.hconcat(tarifa, duracao)).resolve_scale(x="independent")
 
 
 dados = carregar_dados()
@@ -126,10 +185,9 @@ with aba1:
             st.dataframe(df[variaveis].head(10))
 
 with aba2:
-    st.write("### Perfil operacional — rascunho")
-    st.write("Público proposto: equipe de planejamento operacional de táxis.")
-    st.write("Os indicadores descrevem a amostra; não representam os totais da Silver completa.")
-    st.write("Os quatro indicadores usam o mesmo intervalo de distância do Dashboard 1.")
+    st.write("### Perfil operacional")
+    st.write("Para a equipe de planejamento operacional. Os indicadores descrevem a amostra "
+             "no intervalo de distância escolhido, sem representar os totais da Silver completa.")
 
     # Os mesmos cálculos são apresentados no notebook de métricas.
     viagens = len(df)
@@ -150,19 +208,10 @@ with aba2:
     if df.empty:
         st.info("Nenhuma viagem no intervalo. Amplie o filtro para visualizar os horários.")
     else:
-        por_hora = (
-            df.groupby(df["pickup_datetime"].dt.hour)
-            .size()
-            .reindex(range(24), fill_value=0)
-        )
-        fig, ax = plt.subplots(figsize=(12, 4), facecolor="white")
-        ax.bar(por_hora.index, por_hora.values, color=AMARELO, edgecolor=AZUL, linewidth=0.4)
-        ax.set_title("Viagens por hora de embarque")
-        ax.set_xlabel("Hora de embarque (horário registrado na fonte)")
-        ax.set_ylabel("Quantidade de viagens")
-        ax.set_xticks(range(24))
-        preparar_eixos(ax)
-        fig.tight_layout()
-        st.pyplot(fig)
-        plt.close(fig)
-        st.write("A contagem descreve viagens registradas; não mede demanda não atendida.")
+        st.write("Clique em uma barra para filtrar as duas dispersões por hora. "
+                 "Duplo clique limpa a seleção. Essa seleção afeta os visuais; "
+                 "os KPIs seguem o filtro da barra lateral.")
+        st.altair_chart(visuais_operacionais(df), width="stretch")
+        st.write("Barras: todas as viagens do recorte. Dispersões: até 5.000 viagens "
+                 "selecionadas com seed=42, como na EDA. Hora registrada na fonte. "
+                 "A contagem não mede demanda não atendida.")
