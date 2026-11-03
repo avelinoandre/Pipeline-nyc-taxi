@@ -11,3 +11,7 @@ __pycache__/
 .env.postgres
 .venv-airflow/
 .airflow/
+.runtime/
+outputs/eda/
+data/raw/
+secrets.toml
